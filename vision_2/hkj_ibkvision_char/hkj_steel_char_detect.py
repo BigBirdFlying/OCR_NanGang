@@ -2,6 +2,7 @@ import os
 import time
 import cv2
 import json
+import copy
 import socket
 import threading
 import numpy as np
@@ -40,8 +41,9 @@ class SteelCharDetect:
         self.path_steel=path["path_steel"]
         self.path_char=path["path_char"]
         self.path_char_l2=path["path_char_l2"]
-        self.cache_num=0
+        self.cache_num_index=0
         self.cache_char=[]
+        self.curr_char_img_info=[None,None]
         self.last_steel_no="00000000000000"
         self.counter=0
         
@@ -61,7 +63,7 @@ class SteelCharDetect:
         else:
             try:
                 r_image,result = self.steel_model.detect_image(src_image_Image)
-                self.cache_num=self.cache_num+1
+                self.cache_num_index=self.cache_num_index+1
                 max_area=0
                 for n in range(0,len(result)):
                     (top,left,bottom,right)=result[n]['box']
@@ -90,9 +92,13 @@ class SteelCharDetect:
                             left,right=src_image_width-right,src_image_width-left
                             self.log_oper.add_log("Normal>>检测到字符为倒置状态，进行翻转")
 
-                        #拓展图像  
-                        left=max(0,left-0)
-                        right=min(src_image_width,right+0)
+                        #拓展图像
+                        if result[n]['class']=='unchar' or result[n]['class']=='char':
+                            left=max(0,left-0)
+                            right=min(src_image_width,right+0)
+                        else:
+                            left=max(0,left-200)
+                            right=min(src_image_width,right+200)
                         roi_w=right-left
                         top_s,bottom_s=top,bottom
                         for i in range(0,src_image_height):
@@ -108,6 +114,7 @@ class SteelCharDetect:
                             bottom_offset=abs(bottom_s-bottom)
                             char_roi=src_image_Opencv[int(top):int(bottom),int(left):int(right)]
                             char_label=result[n]['class']
+                            self.curr_char_img_info[0],self.curr_char_img_info[1]=img_name,char_roi
                             self.log_oper.add_log("Normal>>成功获得字符ROI")
                 end = time.time()
                 self.log_oper.add_log("Normal>>完成检测{}的图像是否存在字符，共用时{}秒".format(img_path,end-start))
@@ -222,19 +229,19 @@ class SteelCharDetect:
             if len(self.cache_char)<=0:
                 return steel_no,steel_type,steel_size,img_path
             if cache_limit is True:
-                if char_roi is not None and self.cache_num<self.max_cache_num:
+                if char_roi is not None and self.cache_num_index<self.max_cache_num:
                     return steel_no,steel_type,steel_size,img_path
 
             self.cache_char.sort(key=itemgetter(1), reverse=True)
             steel_no,steel_no_score,steel_type,steel_size,src_char_roi,char_roi,top_offset,bottom_offset,img_name=self.cache_char[0]
-            self.cache_num=0
+            self.cache_num_index=0
             self.cache_char=[]
             
             if self.last_steel_no==steel_no:
                 self.log_oper.add_log("Normal>>当前识别钢板号{}已发送过，无需再次发送({})".format(steel_no,img_name))
                 steel_no,steel_type,steel_size,img_path=None,None,None,None
                 return steel_no,steel_type,steel_size,img_path
-            self.last_steel_no=steel_no
+            #self.last_steel_no=steel_no
 
             #保存带标签的图片到本地
             char_roi_h, char_roi_w = char_roi.shape[:2]
@@ -269,13 +276,42 @@ class SteelCharDetect:
             self.log_oper.add_log("Error>>整理字符过程中出现错误，错误代码为{}".format(err))
             steel_no,steel_type,steel_size,img_path=None,None,None,None
             return steel_no,steel_type,steel_size,img_path
+        
     def send_char_to_l2(self,steel_no,steel_type,steel_size,img_path):
         self.counter=self.counter+1
         if self.counter>30000:
             self.counter=1
         send_to_l2(self.sock,self.log_oper,steel_no,steel_type,steel_size,img_path,self.counter,self.mark)
         self.log_oper.add_log("Normal>>识别字符发送到二级")
+        self.last_steel_no=steel_no
 
+    def send_char_to_l2_not_steel_no(self):
+        self.counter=self.counter+1
+        if self.counter>30000:
+            self.counter=1
+        #保存字符图片到二级发送文件夹
+        img_name,char_roi_cut=self.curr_char_img_info[0],self.curr_char_img_info[1]
+        char_roi_cut_resize=cv2.resize(char_roi_cut,(char_roi_cut.shape[1],int(char_roi_cut.shape[1]*0.75)))
+        datetime=time.strftime("%Y%m%d")
+        path_char_l2_curr = ((self.path_char_l2 + "\%s") % datetime)
+        if not os.path.exists(path_char_l2_curr):
+            os.mkdir(path_char_l2_curr)
+        save_l2_char_img_path = os.path.join(path_char_l2_curr,img_name)
+        cv2.imwrite(save_l2_char_img_path,char_roi_cut_resize)
+        img_path=os.path.join(datetime,img_name)
+        self.log_oper.add_log("Normal>>成功保存未识别字符到二级文件夹")
+        
+        send_to_l2(self.sock,self.log_oper,"None","","",img_path,self.counter,self.mark)
+        self.log_oper.add_log("Normal>>未识别字符发送到二级")
+        self.curr_char_img_info=[None,None]
+
+    def send_char_to_l2_not_img(self):
+        self.counter=self.counter+1
+        if self.counter>30000:
+            self.counter=1
+        send_to_l2(self.sock,self.log_oper,"Error","","","",self.counter,self.mark)
+        self.log_oper.add_log("Normal>>无识别字符发送到二级")
+    
 
 
 def steel_char_detect(path_1,path_2,path_3,path_4):
@@ -350,12 +386,20 @@ def steel_char_detect(path_1,path_2,path_3,path_4):
     SCD_HTF2_Oper=SteelCharDetect(3,Log_oper,steel_model,char_model,char_model_param,char_model_mini,char_model_param_mini,s,10,path_3)
     judge_num_print=0
     SCD_PRINT_Oper=SteelCharDetect(4,Log_oper,steel_model,char_model,char_model_param,char_model_mini,char_model_param_mini,s,10,path_4)
+    
+    steel_no_send={"SBM":False,"HTF1":False,"HTF2":False,"PRINT":False}#根据一级信号判断钢板是否经过
+    last_recv_res={"SBM":[1,1,1],"HTF1":[1,1,1],"HTF2":[1,1,1],"PRINT":[1,1,1]}
+    char_roi=None
+    enable_l2_final_send={"SBM":False,"HTF1":False,"HTF2":False,"PRINT":False} #程序重启后钢板不在识别区时不发送数据
+    #第一位：二级是否搜到计划 1为未搜到 0为搜到 第二位：钢板是否在识别区 1为在识别区 0为不在识别区 第三位：辊道转速情况 1为正转 0为停止 -1为倒转 
     while True:
         Log_oper.add_log("Normal>>获得文件夹图像路径列表")
         time.sleep(1)
         
 
         Log_oper.add_log("Normal>>-----------------抛丸机前字符识别-----------------")
+        #recv_res=t_recv_info.get_result()
+        #print(recv_res)
         for root,dirs,files in os.walk(path_1["path_ref"]):
             img_path_list=[]
             
@@ -378,7 +422,30 @@ def steel_char_detect(path_1,path_2,path_3,path_4):
                             SCD_SBM_Oper.detect_char_mini(char_roi,img_name,top_offset,bottom_offset)
                     steel_no,steel_type,steel_size,img_path=SCD_SBM_Oper.get_send_char(char_roi,cache_limit=True)
                     if steel_no is not None:
-                        SCD_SBM_Oper.send_char_to_l2(steel_no,steel_type,steel_size,img_path)
+                        recv_res=t_recv_info.get_result()
+                        if recv_res["SBM"][0]==1 and recv_res["SBM"][2]>=0:  #还未依据钢板号查到计划且辊道速度不为负
+                            SCD_SBM_Oper.send_char_to_l2(steel_no,steel_type,steel_size,img_path)
+                            steel_no_send["SBM"]=True
+
+            recv_res=t_recv_info.get_result()                                   #一级状态
+            if recv_res["SBM"][1]==1:
+                enable_l2_final_send["SBM"]=True
+            if recv_res["SBM"][1]==0 and last_recv_res["SBM"][1]==1:
+                if recv_res["SBM"][2]>=0 and enable_l2_final_send["SBM"] is True:
+                    if steel_no_send["SBM"] is not True:
+                        steel_no,steel_type,steel_size,img_path=SCD_SBM_Oper.get_send_char(char_roi,cache_limit=True)
+                        if steel_no is not None:
+                            SCD_SBM_Oper.send_char_to_l2(steel_no,steel_type,steel_size,img_path)
+                        else:
+                            if SCD_SBM_Oper.curr_char_img_info[1] is not None:
+                                SCD_SBM_Oper.send_char_to_l2_not_steel_no()
+                            else:
+                                SCD_SBM_Oper.send_char_to_l2_not_img()
+            elif recv_res["SBM"][1]==1 and last_recv_res["SBM"][1]==0:
+                steel_no_send["SBM"]=False
+                SCD_SBM_Oper.last_steel_no="00000000000000"                         #钢板重新进入后，上一次发送的板号置0
+                SCD_SBM_Oper.curr_char_img_info=[None,None]
+            last_recv_res["SBM"]=copy.deepcopy(recv_res["SBM"])
                        
             if judge_num_sbm>5:                                                     #如果连续五次搜索不到图像需要确认缓存中是否还存在字符 
                 steel_no,steel_type,steel_size,img_path=SCD_SBM_Oper.get_send_char(char_roi,cache_limit=False)

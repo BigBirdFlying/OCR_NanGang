@@ -1,6 +1,8 @@
 import os
 import time
 import json
+import math
+import copy
 from operator import itemgetter
 
 def is_number(s):
@@ -37,6 +39,18 @@ def get_steel_info(boxes, scores, labels, classes):
             char_width_n=char_width_n+1
             char_height_n=char_height_n+1
         char_boxs.append(temp_box)
+    #针对没有识别到南钢标记的
+    if base_box is None:
+        base_box=[9999, 9999, 9999, 9999,'*',0]
+        for i in range(0,len(char_boxs)):
+            if char_boxs[i][4]!='#' and char_boxs[i][4]!='*':
+                b=math.sqrt(int(base_box[0])*int(base_box[0])+int(base_box[1])*int(base_box[1]))
+                c=math.sqrt(int(char_boxs[i][0])*int(char_boxs[i][0])+int(char_boxs[i][1])*int(char_boxs[i][1]))
+                if b>c:
+                    base_box=copy.deepcopy(char_boxs[i])
+        base_box[0]=base_box[0]-1
+        base_box[2]=base_box[2]-1
+    #
     if char_width_n>0 and char_height_n>0:
         char_width_mean=char_width_mean/char_width_n
         char_height_mean=char_height_mean/char_height_n
@@ -60,11 +74,12 @@ def get_steel_info(boxes, scores, labels, classes):
             one_row_boxs.sort(key=itemgetter(0), reverse=False)     
             steel_no=''
             steel_no_score=0
-            char_interval=0
+            char_interval=[]
             if len(one_row_boxs)>0:
                 b_x=(one_row_boxs[0][2]+one_row_boxs[0][0])/2
                 b_y=(one_row_boxs[0][3]+one_row_boxs[0][1])/2
             is_num=False
+            last_index=-1
             for i in range(0,len(one_row_boxs)):
                 n_x=(one_row_boxs[i][2]+one_row_boxs[i][0])/2
                 n_y=(one_row_boxs[i][3]+one_row_boxs[i][1])/2
@@ -75,10 +90,14 @@ def get_steel_info(boxes, scores, labels, classes):
                     b_x,b_y=n_x,n_y
                     steel_no=steel_no+str(one_row_boxs[i][4])
                     steel_no_score=steel_no_score+one_row_boxs[i][5]
-                #print(str(one_row_boxs[i][4]),one_row_boxs[i][5])
-                if i<len(one_row_boxs)-1:
-                    char_interval=char_interval+max(0,one_row_boxs[i+1][0]-one_row_boxs[i][2])
+                    if last_index != -1:
+                        char_interval.append(max(0,one_row_boxs[i][0]-one_row_boxs[last_index][2]))
+                    last_index=i
                 if len(steel_no)==14:
+                    if max(char_interval)>char_width_mean:
+                        steel_no=list(steel_no)
+                        steel_no[0]="@"
+                        steel_no="".join(steel_no)
                     break
             #第二行数据        
             two_row_boxs=[]
@@ -160,14 +179,14 @@ def get_steel_info_mini(boxes, scores, labels, classes):
         steel_no=''
         steel_no_score=0
         for i in range(0,len(char_boxs)):
-            steel_no=steel_no+str(one_row_boxs[i][4])
-            steel_no_score=steel_no_score+one_row_boxs[i][5]
+            steel_no=steel_no+str(char_boxs[i][4])
+            steel_no_score=steel_no_score+char_boxs[i][5]
 
             if len(steel_no)==14:
                 break
             
-            #返回数据
-            steel_no_score=steel_no_score/14
-            #if char_interval<char_width_mean:
-            return steel_no,steel_no_score
+        #返回数据
+        steel_no_score=steel_no_score/14
+        #if char_interval<char_width_mean:
+        return steel_no,steel_no_score
     return '',0
