@@ -18,6 +18,23 @@ def is_number(s):
     except (TypeError, ValueError):
         pass
     return False
+    
+def cal_iou(box1, box2):
+    ymin1, xmin1, ymax1, xmax1 = box1
+    ymin2, xmin2, ymax2, xmax2 = box2
+    # 计算每个矩形的面积
+    s1 = (xmax1 - xmin1) * (ymax1 - ymin1)  # C的面积
+    s2 = (xmax2 - xmin2) * (ymax2 - ymin2)  # G的面积
+    # 计算相交矩形
+    xmin = max(xmin1, xmin2)
+    ymin = max(ymin1, ymin2)
+    xmax = min(xmax1, xmax2)
+    ymax = min(ymax1, ymax2)
+    w = max(0, xmax - xmin)
+    h = max(0, ymax - ymin)
+    area = w * h  # C∩G的面积
+    iou = area / (s1 + s2 - area)
+    return iou
 
 def get_steel_info(boxes, scores, labels, classes):
     base_box=None
@@ -57,6 +74,8 @@ def get_steel_info(boxes, scores, labels, classes):
         if base_box is not None:
             base_x=(base_box[2]+base_box[0])/2
             base_y=(base_box[3]+base_box[1])/2
+            #数据进行一次x方向排序
+            char_boxs.sort(key=itemgetter(0), reverse=False) 
             #第一行数据
             one_row_boxs=[]
             offset_row_boxs=[]
@@ -67,6 +86,7 @@ def get_steel_info(boxes, scores, labels, classes):
                 if center_x>base_x:
                     if abs(center_y-base_y)<char_height_mean:
                         one_row_boxs.append(char_boxs[i])
+                        base_y=center_y
                     else:
                         offset_row_boxs.append(char_boxs[i])
                         if center_y<offset_row_boxs_min_y:

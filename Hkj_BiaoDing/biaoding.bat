@@ -1,0 +1,2 @@
+python biaoding.py
+pause

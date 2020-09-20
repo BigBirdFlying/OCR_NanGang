@@ -1,0 +1,2 @@
+python jiaozheng.py
+pause

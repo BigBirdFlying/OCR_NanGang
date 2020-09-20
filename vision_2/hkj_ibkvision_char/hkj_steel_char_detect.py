@@ -16,7 +16,7 @@ from struct import pack,unpack,pack_into
 from ctypes import create_string_buffer
 from hkj_ibkvision_char.hkj_file_oper import Log,delete_file,print_info
 from hkj_ibkvision_char.hkj_img_oper import rotate_bound
-from hkj_ibkvision_char.hkj_char_oper import get_steel_info,get_steel_info_mini
+from hkj_ibkvision_char.hkj_char_oper import get_steel_info,get_steel_info_mini,cal_iou
 from hkj_ibkvision_char.hkj_signal_oper import send_to_l2,thread_send_heartbeat_to_l2,thread_recv_info_from_l2,HThreadRecvInfo
 from hkj_ibkvision_char.steel_unit.yolo import YOLO
 from hkj_ibkvision_char.char_unit.model import efficientdet
@@ -65,8 +65,20 @@ class SteelCharDetect:
                 r_image,result = self.steel_model.detect_image(src_image_Image)
                 self.cache_num_index=self.cache_num_index+1
                 max_area=0
-                for n in range(0,len(result)):
-                    (top,left,bottom,right)=result[n]['box']
+                result_more = None
+                if len(result) > 0:
+                    result.sort(key=lambda i: i['score'], reverse=True)
+                    result_more = copy.deepcopy(result[0])
+                    for n in range(0, len(result)):
+                        (top, left, bottom, right) = result[n]['box']
+                        roi_a = (right - left) * (bottom - top)
+                        (top_more, left_more, bottom_more, right_more) = result_more['box']
+                        roi_a_more = (right_more - left_more) * (bottom_more - top_more)
+                        fe = cal_iou(result[n]['box'], result_more['box'])
+                        if roi_a > roi_a_more and fe < 0.1:
+                            result_more = copy.deepcopy(result[n])
+
+                    (top, left, bottom, right) = result_more['box']
                     to_top=top-0
                     to_bottom=src_image_height-bottom
                     to_left=left-0
@@ -75,7 +87,7 @@ class SteelCharDetect:
                     roi_h=bottom-top
                     roi_a=roi_w*roi_h
                     
-                    if roi_w>src_image_width*0.2 and to_left>src_image_width*0.15 and to_right>src_image_width*0.15 and to_top>=0 and to_bottom>=0:
+                    if roi_w>src_image_width*0.1 and to_left>src_image_width*0.15 and to_right>src_image_width*0.15 and to_top>=0 and to_bottom>=0:
                         #存在字符则进行存储
                         datetime=time.strftime("%Y%m%d")
                         save_img_path = ((self.path_steel + "\%s") % datetime)
@@ -86,19 +98,22 @@ class SteelCharDetect:
                         self.log_oper.add_log("Normal>>图像上存在字符，图像保存")
 
                         #判断字符是否为倒置
-                        if result[n]['class']=='unchar':
+                        if result_more['class']=='unchar':
                             src_image_Opencv=rotate_bound(src_image_Opencv,180)
                             top,bottom=src_image_height-bottom,src_image_height-top
                             left,right=src_image_width-right,src_image_width-left
                             self.log_oper.add_log("Normal>>检测到字符为倒置状态，进行翻转")
 
                         #拓展图像
-                        if result[n]['class']=='unchar' or result[n]['class']=='char':
+                        if result_more['class']=='unchar' or result_more['class']=='char':
                             left=max(0,left-0)
+                            #right=left+768
                             right=min(src_image_width,right+0)
                         else:
-                            left=max(0,left-200)
-                            right=min(src_image_width,right+200)
+                            left=max(0,left-50)
+                            right=min(src_image_width,right+50)
+                            #left=max(0,left-200)
+                            #right=min(src_image_width,right+200)
                         roi_w=right-left
                         top_s,bottom_s=top,bottom
                         for i in range(0,src_image_height):
@@ -113,8 +128,14 @@ class SteelCharDetect:
                             top_offset=abs(top_s-top)
                             bottom_offset=abs(bottom_s-bottom)
                             char_roi=src_image_Opencv[int(top):int(bottom),int(left):int(right)]
-                            char_label=result[n]['class']
-                            self.curr_char_img_info[0],self.curr_char_img_info[1]=img_name,char_roi
+                            char_label=result_more['class']
+                            if self.curr_char_img_info[1] is None:
+                                self.curr_char_img_info[0],self.curr_char_img_info[1]=img_name,char_roi
+                            else:
+                                roi_area=char_roi.shape[0]*char_roi.shape[1]
+                                cur_area=self.curr_char_img_info[1].shape[0]*self.curr_char_img_info[1].shape[1]
+                                if roi_area>cur_area:
+                                    self.curr_char_img_info[0],self.curr_char_img_info[1]=img_name,char_roi
                             self.log_oper.add_log("Normal>>成功获得字符ROI")
                 end = time.time()
                 self.log_oper.add_log("Normal>>完成检测{}的图像是否存在字符，共用时{}秒".format(img_path,end-start))
@@ -346,7 +367,7 @@ def steel_char_detect(path_1,path_2,path_3,path_4):
 
     Log_oper.add_log("Normal>>开始载入mini识别模型")
     try:
-        phi_mini = 2
+        phi_mini = 0
         weighted_bifpn_mini = True
         model_path_mini = 'char_model_mini/char_model.h5'
         image_sizes_mini = (512, 640, 768, 896, 1024, 1280, 1408)
@@ -389,8 +410,11 @@ def steel_char_detect(path_1,path_2,path_3,path_4):
     
     steel_no_send={"SBM":False,"HTF1":False,"HTF2":False,"PRINT":False}#根据一级信号判断钢板是否经过
     last_recv_res={"SBM":[1,1,1],"HTF1":[1,1,1],"HTF2":[1,1,1],"PRINT":[1,1,1]}
+    recv_res=t_recv_info.get_result()
+    last_recv_res["SBM"]=copy.deepcopy(recv_res["SBM"])
     char_roi=None
     enable_l2_final_send={"SBM":False,"HTF1":False,"HTF2":False,"PRINT":False} #程序重启后钢板不在识别区时不发送数据
+    last_recv_res_plan_counter={"SBM":last_recv_res["SBM"][0],"HTF1":last_recv_res["HTF1"][0],"HTF2":last_recv_res["HTF2"][0],"PRINT":last_recv_res["PRINT"][0]} #通过2级发送的第一位计数判断是否还给二级发送，如果计数已变化则不再发送
     #第一位：二级是否搜到计划 1为未搜到 0为搜到 第二位：钢板是否在识别区 1为在识别区 0为不在识别区 第三位：辊道转速情况 1为正转 0为停止 -1为倒转 
     while True:
         Log_oper.add_log("Normal>>获得文件夹图像路径列表")
@@ -423,14 +447,14 @@ def steel_char_detect(path_1,path_2,path_3,path_4):
                     steel_no,steel_type,steel_size,img_path=SCD_SBM_Oper.get_send_char(char_roi,cache_limit=True)
                     if steel_no is not None:
                         recv_res=t_recv_info.get_result()
-                        if recv_res["SBM"][0]==1 and recv_res["SBM"][2]>=0:  #还未依据钢板号查到计划且辊道速度不为负
+                        if recv_res["SBM"][0]==last_recv_res_plan_counter["SBM"] and recv_res["SBM"][2]>=0:  #还未依据钢板号查到计划且辊道速度不为负
                             SCD_SBM_Oper.send_char_to_l2(steel_no,steel_type,steel_size,img_path)
                             steel_no_send["SBM"]=True
 
             recv_res=t_recv_info.get_result()                                   #一级状态
             if recv_res["SBM"][1]==1:
                 enable_l2_final_send["SBM"]=True
-            if recv_res["SBM"][1]==0 and last_recv_res["SBM"][1]==1:
+            if recv_res["SBM"][1]==0 and last_recv_res["SBM"][1]==1:#钢板退出时执行
                 if recv_res["SBM"][2]>=0 and enable_l2_final_send["SBM"] is True:
                     if steel_no_send["SBM"] is not True:
                         steel_no,steel_type,steel_size,img_path=SCD_SBM_Oper.get_send_char(char_roi,cache_limit=True)
@@ -441,9 +465,10 @@ def steel_char_detect(path_1,path_2,path_3,path_4):
                                 SCD_SBM_Oper.send_char_to_l2_not_steel_no()
                             else:
                                 SCD_SBM_Oper.send_char_to_l2_not_img()
-            elif recv_res["SBM"][1]==1 and last_recv_res["SBM"][1]==0:
+            elif recv_res["SBM"][1]==1 and last_recv_res["SBM"][1]==0:#钢板重新进入后，上一次发送的板号置0
                 steel_no_send["SBM"]=False
-                SCD_SBM_Oper.last_steel_no="00000000000000"                         #钢板重新进入后，上一次发送的板号置0
+                last_recv_res_plan_counter["SBM"]=copy.deepcopy(recv_res["SBM"][0])
+                SCD_SBM_Oper.last_steel_no="00000000000000"                         
                 SCD_SBM_Oper.curr_char_img_info=[None,None]
             last_recv_res["SBM"]=copy.deepcopy(recv_res["SBM"])
                        
@@ -476,9 +501,33 @@ def steel_char_detect(path_1,path_2,path_3,path_4):
                             SCD_HTF1_Oper.detect_char_mini(char_roi,img_name,top_offset,bottom_offset)
                     steel_no,steel_type,steel_size,img_path=SCD_HTF1_Oper.get_send_char(char_roi,cache_limit=True)
                     if steel_no is not None:
-                        SCD_HTF1_Oper.send_char_to_l2(steel_no,steel_type,steel_size,img_path)
-            
-            if judge_num_htf1<5:                                                    #如果连续五次搜索不到图像需要确认缓存中是否还存在字符 
+                        recv_res=t_recv_info.get_result()
+                        if recv_res["HTF1"][0]==last_recv_res_plan_counter["HTF1"] and recv_res["HTF1"][2]>=0:  #还未依据钢板号查到计划且辊道速度不为负
+                            SCD_HTF1_Oper.send_char_to_l2(steel_no,steel_type,steel_size,img_path)
+                            steel_no_send["HTF1"]=True
+
+            recv_res=t_recv_info.get_result()                                   #一级状态
+            if recv_res["HTF1"][1]==1:
+                enable_l2_final_send["HTF1"]=True
+            if recv_res["HTF1"][1]==0 and last_recv_res["HTF1"][1]==1:#钢板退出时执行
+                if recv_res["HTF1"][2]>=0 and enable_l2_final_send["HTF1"] is True:
+                    if steel_no_send["HTF1"] is not True:
+                        steel_no,steel_type,steel_size,img_path=SCD_HTF1_Oper.get_send_char(char_roi,cache_limit=True)
+                        if steel_no is not None:
+                            SCD_HTF1_Oper.send_char_to_l2(steel_no,steel_type,steel_size,img_path)
+                        else:
+                            if SCD_HTF1_Oper.curr_char_img_info[1] is not None:
+                                SCD_HTF1_Oper.send_char_to_l2_not_steel_no()
+                            else:
+                                SCD_HTF1_Oper.send_char_to_l2_not_img()
+            elif recv_res["HTF1"][1]==1 and last_recv_res["HTF1"][1]==0:#钢板重新进入后，上一次发送的板号置0
+                steel_no_send["HTF1"]=False
+                last_recv_res_plan_counter["HTF1"]=copy.deepcopy(recv_res["HTF1"][0])
+                SCD_HTF1_Oper.last_steel_no="00000000000000"                         
+                SCD_HTF1_Oper.curr_char_img_info=[None,None]
+            last_recv_res["HTF1"]=copy.deepcopy(recv_res["HTF1"])
+                       
+            if judge_num_htf1>5:                                                     #如果连续五次搜索不到图像需要确认缓存中是否还存在字符 
                 steel_no,steel_type,steel_size,img_path=SCD_HTF1_Oper.get_send_char(char_roi,cache_limit=False)
                 if steel_no is not None:
                     SCD_HTF1_Oper.send_char_to_l2(steel_no,steel_type,steel_size,img_path)
