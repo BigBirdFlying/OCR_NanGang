@@ -7,27 +7,10 @@
 #include "HFile.h"
 #include "HThread.h"
 #include "afxwin.h"
+#include "H_DataDef.h"
 //#include "HCNetSDK.h"
 //#include "PlayM4.h"
-
-typedef struct tagConfigCamera
-{
-	int iCamNo;
-	CString strIP;
-	int iPort;
-	CString strUserName;
-	CString strPassword;
-	bool bIsAutoSave;
-	CString strImgPath;
-	long iCamID;
-	//LOCAL_DEVICE_INFO tagDeviceInfo;
-}ConfigCamera,*PConfigCamera;
-typedef struct tagConfigCameraSet
-{
-	enum{MAX_ITEMNUM=16};
-	ConfigCamera Items[MAX_ITEMNUM];
-	int iItemNum;
-}ConfigCameraSet,*PConfigCameraSet;
+#define _CAMERA_NUM_  8
 
 typedef struct tagThreadInfo
 {
@@ -59,19 +42,22 @@ public:
 	static long			m_nPort;
 	static long			m_iSaveIndex;
 	static int			m_iSaveInterval;
-	static int			m_iImgWidth;
-	static int			m_iImgHeight;
+	static int			m_iBiaoDingImgWidth;
+	static int			m_iBiaoDingImgHeight;
 	static HWND			m_hPlayWnd;
-	HThread				m_hThread[8];
-	static long			m_iImageSaveIndex[8];
-	static CString		m_iImageSavePath[8];
+	HThread				m_hThread[_CAMERA_NUM_];
+	static long			m_iImageSaveIndex[_CAMERA_NUM_];
+	static CString		m_iImageSavePath[_CAMERA_NUM_];
+	static int			m_iImgWidth[_CAMERA_NUM_];
+	static int			m_iImgHeight[_CAMERA_NUM_];
 	ThreadInfo			m_ThreadInfo;
 	static cv::Mat		m_cameraMatrix;
 	static cv::Mat		m_distCoeffs;
 	static cv::Mat		m_newMatrix;
 	static cv::Rect		m_rectRoi;
+	
+	static ConfigCameraSet		m_ConfigCameraSet;
 
-	ConfigCameraSet		m_ConfigCameraSet;
 	HFile_log			m_LogOper;
 	LOCAL_DEVICE_INFO	m_tagDeviceInfo;
 	
@@ -89,8 +75,9 @@ public:
 	static CString GetAppPath();
 	static bool GetCameraImageLoop(LONG lCamNO,LONG lUserID);
 	static UINT ThreadProc(LPVOID pParam);
-	static void GetCameraMatrix();
-	static void RectifyImage(cv::Mat src ,cv::Mat& dst); 
+	static void GetCameraMatrix(int iImgWidth,int iImgHeight);
+	static void RectifyImage(const cv::Mat src ,cv::Mat& dst); 
+	static void RotataImage(const cv::Mat src ,cv::Mat& dst,int iAngle);
 	static void SaveImageOpenCV(cv::Mat src ,CString strImgPath, long iIndex);
 
 	static void CALLBACK fRealDataCallBack(LONG lRealHandle,DWORD dwDataType,BYTE *pBuffer,DWORD dwBufSize,void *pUser);

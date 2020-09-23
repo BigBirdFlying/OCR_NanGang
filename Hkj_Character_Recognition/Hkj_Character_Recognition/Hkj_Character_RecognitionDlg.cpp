@@ -12,6 +12,22 @@
 #endif
 
 
+long	CHkj_Character_RecognitionDlg::m_nPort=-1;
+long	CHkj_Character_RecognitionDlg::m_iSaveIndex=0;
+int		CHkj_Character_RecognitionDlg::m_iSaveInterval=10;
+int		CHkj_Character_RecognitionDlg::m_iBiaoDingImgWidth=2560;
+int		CHkj_Character_RecognitionDlg::m_iBiaoDingImgHeight=1440;
+HWND	CHkj_Character_RecognitionDlg::m_hPlayWnd=NULL;
+cv::Mat		CHkj_Character_RecognitionDlg::m_cameraMatrix=cv::Mat();
+cv::Mat		CHkj_Character_RecognitionDlg::m_distCoeffs=cv::Mat();
+cv::Mat		CHkj_Character_RecognitionDlg::m_newMatrix=cv::Mat();
+cv::Rect	CHkj_Character_RecognitionDlg::m_rectRoi=cv::Rect();
+long		CHkj_Character_RecognitionDlg::m_iImageSaveIndex[_CAMERA_NUM_]={0};
+CString		CHkj_Character_RecognitionDlg::m_iImageSavePath[_CAMERA_NUM_]={0};
+int		CHkj_Character_RecognitionDlg::m_iImgWidth[_CAMERA_NUM_]={0};
+int		CHkj_Character_RecognitionDlg::m_iImgHeight[_CAMERA_NUM_]={0};
+ConfigCameraSet		CHkj_Character_RecognitionDlg::m_ConfigCameraSet={};
+
 // 用于应用程序“关于”菜单项的 CAboutDlg 对话框
 
 class CAboutDlg : public CDialog
@@ -45,18 +61,7 @@ END_MESSAGE_MAP()
 
 // CHkj_Character_RecognitionDlg 对话框
 //////////////////////////////////////////////////////////////////////////
-long	CHkj_Character_RecognitionDlg::m_nPort=-1;
-long	CHkj_Character_RecognitionDlg::m_iSaveIndex=0;
-int		CHkj_Character_RecognitionDlg::m_iSaveInterval=10;
-int		CHkj_Character_RecognitionDlg::m_iImgWidth=2560;
-int		CHkj_Character_RecognitionDlg::m_iImgHeight=1440;
-HWND	CHkj_Character_RecognitionDlg::m_hPlayWnd=NULL;
-cv::Mat		CHkj_Character_RecognitionDlg::m_cameraMatrix=cv::Mat();
-cv::Mat		CHkj_Character_RecognitionDlg::m_distCoeffs=cv::Mat();
-cv::Mat		CHkj_Character_RecognitionDlg::m_newMatrix=cv::Mat();
-cv::Rect	CHkj_Character_RecognitionDlg::m_rectRoi=cv::Rect();
-long		CHkj_Character_RecognitionDlg::m_iImageSaveIndex[8]={0};
-CString		CHkj_Character_RecognitionDlg::m_iImageSavePath[8]={0};
+
 
 CHkj_Character_RecognitionDlg::CHkj_Character_RecognitionDlg(CWnd* pParent /*=NULL*/)
 	: CDialog(CHkj_Character_RecognitionDlg::IDD, pParent)
@@ -114,6 +119,12 @@ BOOL CHkj_Character_RecognitionDlg::OnInitDialog()
 	SetIcon(m_hIcon, FALSE);		// 设置小图标
 
 	// TODO: 在此添加额外的初始化代码
+	//cv::Mat src=cv::imread("1.jpg",0);
+	//cv::Mat dst;
+	//CHkj_Character_RecognitionDlg::RotataImage(src,dst,180);
+	//cv::namedWindow("ss",0);
+	//cv::imshow("ss",dst);
+	//cv::waitKey(0);
 	//标题
 	CString strTime=L"";
 	CTime CurTime = CTime::GetCurrentTime();
@@ -154,12 +165,14 @@ BOOL CHkj_Character_RecognitionDlg::OnInitDialog()
 	}		
 	CreateDeviceTree();
 
-	CHkj_Character_RecognitionDlg::GetCameraMatrix();
+	CHkj_Character_RecognitionDlg::GetCameraMatrix(m_iBiaoDingImgWidth,m_iBiaoDingImgHeight);
 	for(int i=0;i<m_ConfigCameraSet.iItemNum;i++)
 	{
 		if(true==m_ConfigCameraSet.Items[i].bIsAutoSave)
 		{
 			//EnterCallback(m_ConfigCameraSet.Items[i].iCamID);
+			m_iImgWidth[i]=m_ConfigCameraSet.Items[i].iImgWidth;
+			m_iImgHeight[i]=m_ConfigCameraSet.Items[i].iImgHeight;
 			m_iImageSavePath[i]=L"";
 			m_iImageSavePath[i].Format(L"%s",m_ConfigCameraSet.Items[i].strImgPath);
 			m_hThread[i].m_ThreadParam.hWnd=m_hWnd;
@@ -288,6 +301,12 @@ bool CHkj_Character_RecognitionDlg::LoadConfigFile(CString strPath)
 
 		hFileXml.Read(L"//字符识别系统程序配置//基本配置//相机数量",strValue);
 		m_iCameraNum=_ttoi(strValue);
+
+		hFileXml.Read(L"//字符识别系统程序配置//基本配置//标定相机图像宽度",strValue);
+		m_iBiaoDingImgWidth=_ttoi(strValue);
+
+		hFileXml.Read(L"//字符识别系统程序配置//基本配置//标定相机图像高度",strValue);
+		m_iBiaoDingImgHeight=_ttoi(strValue);
 		
 		m_ConfigCameraSet.iItemNum=0;
 		for(int i=0;i<m_iCameraNum;i++)
@@ -317,6 +336,14 @@ bool CHkj_Character_RecognitionDlg::LoadConfigFile(CString strPath)
 			m_ConfigCameraSet.Items[m_ConfigCameraSet.iItemNum].strPassword=L"";
 			m_ConfigCameraSet.Items[m_ConfigCameraSet.iItemNum].strPassword.Format(L"%s",strValue);
 
+			strKey.Format(L"//字符识别系统程序配置//采集相机配置//相机%d//图像宽度",i);
+			hFileXml.Read(strKey,strValue);
+			m_ConfigCameraSet.Items[m_ConfigCameraSet.iItemNum].iImgWidth=_ttoi(strValue);
+
+			strKey.Format(L"//字符识别系统程序配置//采集相机配置//相机%d//图像高度",i);
+			hFileXml.Read(strKey,strValue);
+			m_ConfigCameraSet.Items[m_ConfigCameraSet.iItemNum].iImgHeight=_ttoi(strValue);
+
 			strKey.Format(L"//字符识别系统程序配置//采集相机配置//相机%d//自动存储",i);
 			hFileXml.Read(strKey,strValue);
 			if(_ttoi(strValue)>0)
@@ -327,6 +354,22 @@ bool CHkj_Character_RecognitionDlg::LoadConfigFile(CString strPath)
 			{
 				m_ConfigCameraSet.Items[m_ConfigCameraSet.iItemNum].bIsAutoSave=false;
 			}
+
+			strKey.Format(L"//字符识别系统程序配置//采集相机配置//相机%d//判钢区域//左侧判钢比例",i);
+			hFileXml.Read(strKey,strValue);
+			m_ConfigCameraSet.Items[m_ConfigCameraSet.iItemNum].fJudgeLeftRatio=_tstof(strValue);
+
+			strKey.Format(L"//字符识别系统程序配置//采集相机配置//相机%d//判钢区域//右侧判钢比例",i);
+			hFileXml.Read(strKey,strValue);
+			m_ConfigCameraSet.Items[m_ConfigCameraSet.iItemNum].fJudgeRightRatio=_tstof(strValue);
+
+			strKey.Format(L"//字符识别系统程序配置//采集相机配置//相机%d//判钢区域//保存阈值",i);
+			hFileXml.Read(strKey,strValue);
+			m_ConfigCameraSet.Items[m_ConfigCameraSet.iItemNum].fJudgeSaveImgLimit=_tstof(strValue);
+
+			strKey.Format(L"//字符识别系统程序配置//采集相机配置//相机%d//图像旋转角度",i);
+			hFileXml.Read(strKey,strValue);
+			m_ConfigCameraSet.Items[m_ConfigCameraSet.iItemNum].iRotateAngle=_ttoi(strValue);
 
 			strKey.Format(L"//字符识别系统程序配置//采集相机配置//相机%d//图像存储路径",i);
 			hFileXml.Read(strKey,strValue);
@@ -526,8 +569,8 @@ bool CHkj_Character_RecognitionDlg::GetCameraImageLoop(LONG lCamNO,LONG lUserID)
     JpegPara.wPicQuality=0;
     JpegPara.wPicSize=0xff;
 
-	int iWidth=2560;
-	int iHeight=1440;
+	int iWidth=m_iImgWidth[lCamNO];
+	int iHeight=m_iImgHeight[lCamNO];
 	DWORD len = iHeight*iWidth;
 	DWORD  SizeReturned=0;
 	char *JpegPicBuffer= new char[len];
@@ -537,25 +580,63 @@ bool CHkj_Character_RecognitionDlg::GetCameraImageLoop(LONG lCamNO,LONG lUserID)
 		BOOL bRet= NET_DVR_CaptureJPEGPicture_NEW(lUserID, 1,&JpegPara,JpegPicBuffer,len,&SizeReturned);
 		if (bRet)
 		{
+			//相机图像配置
+			int iAngle=0;
+			float fJudgeLeftRatio=0.4;
+			float fJudgeRightRatio=0.6;
+			float fJudgeSaveImgLimit=0.01;
+			for(int i=0;i<m_ConfigCameraSet.iItemNum;i++)
+			{
+				if(lCamNO==m_ConfigCameraSet.Items[i].iCamNo)
+				{
+					iAngle=m_ConfigCameraSet.Items[i].iRotateAngle;
+					if(m_ConfigCameraSet.Items[i].fJudgeLeftRatio>0 && m_ConfigCameraSet.Items[i].fJudgeRightRatio<1 && m_ConfigCameraSet.Items[i].fJudgeRightRatio>m_ConfigCameraSet.Items[i].fJudgeLeftRatio)
+					{
+						fJudgeLeftRatio=m_ConfigCameraSet.Items[i].fJudgeLeftRatio;
+						fJudgeRightRatio=m_ConfigCameraSet.Items[i].fJudgeRightRatio;
+					}
+					fJudgeSaveImgLimit=m_ConfigCameraSet.Items[i].fJudgeSaveImgLimit;
+					break;
+				}
+			}
+			//
 			cv::Mat img(iHeight, iWidth, CV_8UC1, (uchar*)JpegPicBuffer);
 			cv::Mat src = imdecode(img,1);
+			cv::Mat dst_rtf;
+			if(iWidth==m_iBiaoDingImgWidth && iHeight==m_iBiaoDingImgHeight)
+			{
+				CHkj_Character_RecognitionDlg::RectifyImage(src,dst_rtf);
+			}
+			else
+			{
+				dst_rtf=src.clone();
+			}
+			//是否旋转图像			
 			cv::Mat dst;
-			CHkj_Character_RecognitionDlg::RectifyImage(src,dst);
+			if(iAngle==0)
+			{
+				dst=dst_rtf.clone();
+			}
+			else
+			{
+				RotataImage(dst_rtf,dst,iAngle);
+			}
+			//转灰度图
 			cv::Mat gray;
 			cv::cvtColor(dst,gray,cv::COLOR_RGB2GRAY);
 			//判断是否有钢板
 			cv::Mat roi_top,gray_th_top;
-			cv::Rect rect_top((int)(gray.cols*0.25),(int)(gray.rows*0.1),(int)(gray.cols*0.5),(int)(gray.rows*0.2));
+			cv::Rect rect_top((int)(gray.cols*fJudgeLeftRatio),(int)(gray.rows*0.1),(int)(gray.cols*(fJudgeRightRatio-fJudgeLeftRatio)),(int)(gray.rows*0.2));
 			gray(rect_top).copyTo(roi_top);
 			cv::threshold(roi_top,gray_th_top,50,255,1);
 
 			cv::Mat roi_center,gray_th_center;
-			cv::Rect rect_center((int)(gray.cols*0.25),(int)(gray.rows*0.4),(int)(gray.cols*0.5),(int)(gray.rows*0.2));
+			cv::Rect rect_center((int)(gray.cols*fJudgeLeftRatio),(int)(gray.rows*0.4),(int)(gray.cols*(fJudgeRightRatio-fJudgeLeftRatio)),(int)(gray.rows*0.2));
 			gray(rect_center).copyTo(roi_center);
 			cv::threshold(roi_center,gray_th_center,50,255,1);
 
 			cv::Mat roi_bottom,gray_th_bottom;
-			cv::Rect rect_bottom((int)(gray.cols*0.25),(int)(gray.rows*0.7),(int)(gray.cols*0.5),(int)(gray.rows*0.2));
+			cv::Rect rect_bottom((int)(gray.cols*fJudgeLeftRatio),(int)(gray.rows*0.7),(int)(gray.cols*(fJudgeRightRatio-fJudgeLeftRatio)),(int)(gray.rows*0.2));
 			gray(rect_bottom).copyTo(roi_bottom);
 			cv::threshold(roi_bottom,gray_th_bottom,50,255,1);
 
@@ -570,7 +651,7 @@ bool CHkj_Character_RecognitionDlg::GetCameraImageLoop(LONG lCamNO,LONG lUserID)
 			//cv::imshow("ss",gray_th_center);
 			//cv::waitKey();
 			//
-			if(f_top_noZero<0.01 || f_center_noZero<0.01 || f_bottom_noZero<0.01)
+			if(f_top_noZero<fJudgeSaveImgLimit || f_center_noZero<fJudgeSaveImgLimit || f_bottom_noZero<fJudgeSaveImgLimit)
 			{
 				
 				CString strAppPath=GetAppPath();
@@ -635,7 +716,7 @@ CString CHkj_Character_RecognitionDlg::GetAppPath()
 	return strAppPath;
 }
 
-void CHkj_Character_RecognitionDlg::GetCameraMatrix() 
+void CHkj_Character_RecognitionDlg::GetCameraMatrix(int iImgWidth,int iImgHeight) 
 {
 	m_cameraMatrix = cv::Mat::eye(3, 3, CV_64F);
     m_cameraMatrix.at<double>(0, 0) = 1996.731;
@@ -655,15 +736,22 @@ void CHkj_Character_RecognitionDlg::GetCameraMatrix()
     m_distCoeffs.at<double>(3, 0) = 0.001086;
     m_distCoeffs.at<double>(4, 0) = -0.014611;
 
-	cv::Size imageSize=cv::Size(m_iImgWidth,m_iImgHeight);
+	cv::Size imageSize=cv::Size(iImgWidth,iImgHeight);
 	m_newMatrix=cv::getOptimalNewCameraMatrix(m_cameraMatrix,m_distCoeffs,imageSize,1,imageSize,&m_rectRoi);
 }
 
-void CHkj_Character_RecognitionDlg::RectifyImage(cv::Mat src ,cv::Mat& dst) 
+void CHkj_Character_RecognitionDlg::RectifyImage(const cv::Mat src ,cv::Mat& dst) 
 {
 	cv::Mat dst_temp;
 	cv::undistort(src,dst_temp,m_cameraMatrix,m_distCoeffs,m_newMatrix);
 	dst_temp(m_rectRoi).copyTo(dst);
+}
+
+void CHkj_Character_RecognitionDlg::RotataImage(const cv::Mat src ,cv::Mat& dst,int iAngle)
+{
+	cv::Point2f center(src.cols / 2, src.rows / 2);//中心
+	cv::Mat M = getRotationMatrix2D(center, iAngle, 1);//计算旋转的仿射变换矩阵 
+	warpAffine(src, dst, M, cv::Size(src.cols, src.rows));//仿射变换  
 }
 
 void CHkj_Character_RecognitionDlg::SaveImageOpenCV(cv::Mat src ,CString strImgPath, long iIndex) 

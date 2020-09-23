@@ -410,6 +410,7 @@ def steel_char_detect(path_1,path_2,path_3,path_4):
     
     steel_no_send={"SBM":False,"HTF1":False,"HTF2":False,"PRINT":False}#根据一级信号判断钢板是否经过
     last_recv_res={"SBM":[1,1,1],"HTF1":[1,1,1],"HTF2":[1,1,1],"PRINT":[1,1,1]}
+    time.sleep(5)#延时一会，让二级信息接收到后，再对变量进行更新，不让其使用默认值，另外感觉recv_res得到的是变量的地址，会跟着变
     recv_res=t_recv_info.get_result()
     last_recv_res["SBM"]=copy.deepcopy(recv_res["SBM"])
     char_roi=None
