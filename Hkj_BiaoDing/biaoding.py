@@ -6,14 +6,16 @@ import glob
 criteria = (cv2.TERM_CRITERIA_MAX_ITER | cv2.TERM_CRITERIA_EPS, 30, 0.001)
  
 # 获取标定板角点的位置
-row,col=11,8
+# 标定时要注意的坑，就是标定板一定要尽量充满图像，不然标定完会报错
+#row,col=11,8 #2560
+row,col=9,6 #1920
 objp = np.zeros((row*col,3), np.float32)
 objp[:,:2] = np.mgrid[0:row,0:col].T.reshape(-1,2)  # 将世界坐标系建在标定板上，所有点的Z坐标全部为0，所以只需要赋值x和y
  
 obj_points = []    # 存储3D点
 img_points = []    # 存储2D点
  
-images = glob.glob("mask/*.bmp")
+images = glob.glob("mask_1920/*.bmp")
 for fname in images:
     img = cv2.imread(fname)
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
@@ -55,11 +57,12 @@ print("-----------------------------------------------------")
 img = cv2.imread(images[0])
 h, w = img.shape[:2]
 newcameramtx, roi = cv2.getOptimalNewCameraMatrix(mtx,dist,(w,h),1,(w,h))
-print(newcameramtx)
+print(img.shape)
 
 print("------------------使用undistort函数-------------------")
 dst = cv2.undistort(img,mtx,dist,None,newcameramtx)
 x,y,w,h = roi
+print(roi)
 dstc = dst[y:y+h,x:x+w]
 cv2.imwrite('calibresultu.jpg', dstc)
 print("方法一:dst的大小为:", dstc.shape)

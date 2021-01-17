@@ -42,8 +42,6 @@ public:
 	static long			m_nPort;
 	static long			m_iSaveIndex;
 	static int			m_iSaveInterval;
-	static int			m_iBiaoDingImgWidth;
-	static int			m_iBiaoDingImgHeight;
 	static HWND			m_hPlayWnd;
 	HThread				m_hThread[_CAMERA_NUM_];
 	static long			m_iImageSaveIndex[_CAMERA_NUM_];
@@ -51,10 +49,6 @@ public:
 	static int			m_iImgWidth[_CAMERA_NUM_];
 	static int			m_iImgHeight[_CAMERA_NUM_];
 	ThreadInfo			m_ThreadInfo;
-	static cv::Mat		m_cameraMatrix;
-	static cv::Mat		m_distCoeffs;
-	static cv::Mat		m_newMatrix;
-	static cv::Rect		m_rectRoi;
 	
 	static ConfigCameraSet		m_ConfigCameraSet;
 
@@ -75,8 +69,9 @@ public:
 	static CString GetAppPath();
 	static bool GetCameraImageLoop(LONG lCamNO,LONG lUserID);
 	static UINT ThreadProc(LPVOID pParam);
-	static void GetCameraMatrix(int iImgWidth,int iImgHeight);
-	static void RectifyImage(const cv::Mat src ,cv::Mat& dst); 
+	static void GetCameraMatrix_2560(int iImgWidth,int iImgHeight,cv::Mat &cameraMatrix,cv::Mat &distCoeffs,cv::Mat &newMatrix,cv::Rect &rectRoi);
+	static void GetCameraMatrix_1920(int iImgWidth,int iImgHeight,cv::Mat &cameraMatrix,cv::Mat &distCoeffs,cv::Mat &newMatrix,cv::Rect &rectRoi);
+	static void RectifyImage(const cv::Mat src ,cv::Mat& dst,cv::Mat cameraMatrix,cv::Mat distCoeffs,cv::Mat newMatrix,cv::Rect rectRoi); 
 	static void RotataImage(const cv::Mat src ,cv::Mat& dst,int iAngle);
 	static void SaveImageOpenCV(cv::Mat src ,CString strImgPath, long iIndex);
 

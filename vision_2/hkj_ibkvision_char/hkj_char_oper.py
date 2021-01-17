@@ -195,13 +195,21 @@ def get_steel_info_mini(boxes, scores, labels, classes):
         char_width_mean=char_width_mean/char_width_n
         char_height_mean=char_height_mean/char_height_n
         
-        char_boxs.sort(key=itemgetter(0), reverse=False)     
+        char_boxs.sort(key=itemgetter(0), reverse=False)
+        if len(char_boxs)>0:
+            base_box=char_boxs[0]
+            base_x=(base_box[2]+base_box[0])/2 - 1
+            base_y=(base_box[3]+base_box[1])/2 - 1
         steel_no=''
         steel_no_score=0
         for i in range(0,len(char_boxs)):
-            steel_no=steel_no+str(char_boxs[i][4])
-            steel_no_score=steel_no_score+char_boxs[i][5]
-
+            center_x=(char_boxs[i][2]+char_boxs[i][0])/2
+            center_y=(char_boxs[i][3]+char_boxs[i][1])/2
+            if center_x>base_x:
+                if abs(center_y-base_y)<char_height_mean:
+                    steel_no=steel_no+str(char_boxs[i][4])
+                    steel_no_score=steel_no_score+char_boxs[i][5]
+                    base_y=center_y
             if len(steel_no)==14:
                 break
             

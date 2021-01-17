@@ -75,28 +75,28 @@ class HThreadRecvInfo(threading.Thread):
         self.name = name
         self.s,self.log_oper = args
         self.res = {"SBM":[1,1,1],"HTF1":[1,1,1],"HTF2":[1,1,1],"PRINT":[1,1,1]} 
-        #第一位：二级是否搜到计划 1为未搜到 0为搜到 第二位：钢板是否在识别区 1为在识别区 0为不在识别区 第三位：辊道转速情况 1为正转 0为停止 -1为倒转 
+        #第一位：二级是否搜到计划 计数 数变了为搜到，数不变为没搜到 第二位：钢板是否在识别区 1为在识别区 0为不在识别区 第三位：辊道转速情况 1为正转 0为停止 -1为倒转 
     def run(self):
         while True:
-            recv=self.s.recv(14)
-            value=unpack("hhhhhhh", recv)
-            if int(value[-4])==0:
-                self.res["SBM"][0]=int(value[-3])
-                self.res["SBM"][1]=int(value[-2])
-                self.res["SBM"][2]=int(value[-1])
-            elif int(value[-4])==1:
-                self.res["HTF1"][0]=int(value[-3])
-                self.res["HTF1"][1]=int(value[-2])
-                self.res["HTF1"][2]=int(value[-1])
-            elif int(value[-4])==2:
-                self.res["HTF2"][0]=int(value[-3])
-                self.res["HTF2"][1]=int(value[-2])
-                self.res["HTF2"][2]=int(value[-1])
-            elif int(value[-4])==3:
-                self.res["PRINT"][0]=int(value[-3])
-                self.res["PRINT"][1]=int(value[-2])
-                self.res["PRINT"][2]=int(value[-1])
-            #self.log_oper.add_log("Normal>>接收到二级发送的数据："+str(value))
+            recv=self.s.recv(32)
+            value=unpack("hhhhhhhhhhhhhhhh", recv)
+            
+            self.res["SBM"][0]=int(value[4])
+            self.res["SBM"][1]=int(value[5])
+            self.res["SBM"][2]=int(value[6])
+
+            self.res["HTF1"][0]=int(value[7])
+            self.res["HTF1"][1]=int(value[8])
+            self.res["HTF1"][2]=int(value[9])
+
+            self.res["HTF2"][0]=int(value[10])
+            self.res["HTF2"][1]=int(value[11])
+            self.res["HTF2"][2]=int(value[12])
+
+            self.res["PRINT"][0]=int(value[13])
+            self.res["PRINT"][1]=int(value[14])
+            self.res["PRINT"][2]=int(value[15])
+
             self.log_oper.add_log("Normal>>当前各识别点状态：{}".format(self.res))
  
     def get_result(self):

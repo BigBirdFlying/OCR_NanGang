@@ -15,13 +15,11 @@
 long	CHkj_Character_RecognitionDlg::m_nPort=-1;
 long	CHkj_Character_RecognitionDlg::m_iSaveIndex=0;
 int		CHkj_Character_RecognitionDlg::m_iSaveInterval=10;
-int		CHkj_Character_RecognitionDlg::m_iBiaoDingImgWidth=2560;
-int		CHkj_Character_RecognitionDlg::m_iBiaoDingImgHeight=1440;
 HWND	CHkj_Character_RecognitionDlg::m_hPlayWnd=NULL;
-cv::Mat		CHkj_Character_RecognitionDlg::m_cameraMatrix=cv::Mat();
-cv::Mat		CHkj_Character_RecognitionDlg::m_distCoeffs=cv::Mat();
-cv::Mat		CHkj_Character_RecognitionDlg::m_newMatrix=cv::Mat();
-cv::Rect	CHkj_Character_RecognitionDlg::m_rectRoi=cv::Rect();
+//cv::Mat		CHkj_Character_RecognitionDlg::m_cameraMatrix=cv::Mat();
+//cv::Mat		CHkj_Character_RecognitionDlg::m_distCoeffs=cv::Mat();
+//cv::Mat		CHkj_Character_RecognitionDlg::m_newMatrix=cv::Mat();
+//cv::Rect	CHkj_Character_RecognitionDlg::m_rectRoi=cv::Rect();
 long		CHkj_Character_RecognitionDlg::m_iImageSaveIndex[_CAMERA_NUM_]={0};
 CString		CHkj_Character_RecognitionDlg::m_iImageSavePath[_CAMERA_NUM_]={0};
 int		CHkj_Character_RecognitionDlg::m_iImgWidth[_CAMERA_NUM_]={0};
@@ -165,7 +163,7 @@ BOOL CHkj_Character_RecognitionDlg::OnInitDialog()
 	}		
 	CreateDeviceTree();
 
-	CHkj_Character_RecognitionDlg::GetCameraMatrix(m_iBiaoDingImgWidth,m_iBiaoDingImgHeight);
+	//CHkj_Character_RecognitionDlg::GetCameraMatrix(m_iBiaoDingImgWidth,m_iBiaoDingImgHeight);
 	for(int i=0;i<m_ConfigCameraSet.iItemNum;i++)
 	{
 		if(true==m_ConfigCameraSet.Items[i].bIsAutoSave)
@@ -195,7 +193,9 @@ UINT CHkj_Character_RecognitionDlg::ThreadProc(LPVOID pParam)
 	{		
 		LONG lCamNO=pThreadParam->index/100;
 		LONG lUserID=pThreadParam->index%100;
-		switch(lCamNO)
+		GetCameraImageLoop(lCamNO,lUserID);
+		pThreadParam->bExit=true;
+/*		switch(lCamNO)
 		{
 		case 0:
 			GetCameraImageLoop(lCamNO,lUserID);
@@ -214,7 +214,7 @@ UINT CHkj_Character_RecognitionDlg::ThreadProc(LPVOID pParam)
 			pThreadParam->bExit=true;
 			break;
 		default:break;
-		}		
+		}*/		
 		Sleep(500);
 		//
 	}
@@ -301,12 +301,6 @@ bool CHkj_Character_RecognitionDlg::LoadConfigFile(CString strPath)
 
 		hFileXml.Read(L"//字符识别系统程序配置//基本配置//相机数量",strValue);
 		m_iCameraNum=_ttoi(strValue);
-
-		hFileXml.Read(L"//字符识别系统程序配置//基本配置//标定相机图像宽度",strValue);
-		m_iBiaoDingImgWidth=_ttoi(strValue);
-
-		hFileXml.Read(L"//字符识别系统程序配置//基本配置//标定相机图像高度",strValue);
-		m_iBiaoDingImgHeight=_ttoi(strValue);
 		
 		m_ConfigCameraSet.iItemNum=0;
 		for(int i=0;i<m_iCameraNum;i++)
@@ -344,6 +338,17 @@ bool CHkj_Character_RecognitionDlg::LoadConfigFile(CString strPath)
 			hFileXml.Read(strKey,strValue);
 			m_ConfigCameraSet.Items[m_ConfigCameraSet.iItemNum].iImgHeight=_ttoi(strValue);
 
+			strKey.Format(L"//字符识别系统程序配置//采集相机配置//相机%d//是否标定",i);
+			hFileXml.Read(strKey,strValue);
+			if(_ttoi(strValue)>0)
+			{
+				m_ConfigCameraSet.Items[m_ConfigCameraSet.iItemNum].bIsRefy=true;
+			}
+			else
+			{
+				m_ConfigCameraSet.Items[m_ConfigCameraSet.iItemNum].bIsRefy=false;
+			}
+
 			strKey.Format(L"//字符识别系统程序配置//采集相机配置//相机%d//自动存储",i);
 			hFileXml.Read(strKey,strValue);
 			if(_ttoi(strValue)>0)
@@ -354,6 +359,10 @@ bool CHkj_Character_RecognitionDlg::LoadConfigFile(CString strPath)
 			{
 				m_ConfigCameraSet.Items[m_ConfigCameraSet.iItemNum].bIsAutoSave=false;
 			}
+
+			strKey.Format(L"//字符识别系统程序配置//采集相机配置//相机%d//保存间隔时间",i);
+			hFileXml.Read(strKey,strValue);
+			m_ConfigCameraSet.Items[m_ConfigCameraSet.iItemNum].iSaveIntervalTime=_ttoi(strValue);
 
 			strKey.Format(L"//字符识别系统程序配置//采集相机配置//相机%d//判钢区域//左侧判钢比例",i);
 			hFileXml.Read(strKey,strValue);
@@ -574,6 +583,19 @@ bool CHkj_Character_RecognitionDlg::GetCameraImageLoop(LONG lCamNO,LONG lUserID)
 	DWORD len = iHeight*iWidth;
 	DWORD  SizeReturned=0;
 	char *JpegPicBuffer= new char[len];
+
+	cv::Mat cameraMatrix;
+	cv::Mat distCoeffs;
+	cv::Mat newMatrix;
+	cv::Rect rectRoi;
+	if(iWidth==2560)
+	{
+		GetCameraMatrix_2560(iWidth,iHeight,cameraMatrix,distCoeffs,newMatrix,rectRoi);
+	}
+	else if(iWidth==1920)
+	{
+		GetCameraMatrix_1920(iWidth,iHeight,cameraMatrix,distCoeffs,newMatrix,rectRoi);
+	}
       
 	while(true)
 	{
@@ -585,6 +607,8 @@ bool CHkj_Character_RecognitionDlg::GetCameraImageLoop(LONG lCamNO,LONG lUserID)
 			float fJudgeLeftRatio=0.4;
 			float fJudgeRightRatio=0.6;
 			float fJudgeSaveImgLimit=0.01;
+			bool bIsRefy=false;
+			int iSaveIntervalTime=100;
 			for(int i=0;i<m_ConfigCameraSet.iItemNum;i++)
 			{
 				if(lCamNO==m_ConfigCameraSet.Items[i].iCamNo)
@@ -596,6 +620,8 @@ bool CHkj_Character_RecognitionDlg::GetCameraImageLoop(LONG lCamNO,LONG lUserID)
 						fJudgeRightRatio=m_ConfigCameraSet.Items[i].fJudgeRightRatio;
 					}
 					fJudgeSaveImgLimit=m_ConfigCameraSet.Items[i].fJudgeSaveImgLimit;
+					bIsRefy=m_ConfigCameraSet.Items[i].bIsRefy;
+					iSaveIntervalTime=m_ConfigCameraSet.Items[i].iSaveIntervalTime;
 					break;
 				}
 			}
@@ -603,9 +629,9 @@ bool CHkj_Character_RecognitionDlg::GetCameraImageLoop(LONG lCamNO,LONG lUserID)
 			cv::Mat img(iHeight, iWidth, CV_8UC1, (uchar*)JpegPicBuffer);
 			cv::Mat src = imdecode(img,1);
 			cv::Mat dst_rtf;
-			if(iWidth==m_iBiaoDingImgWidth && iHeight==m_iBiaoDingImgHeight)
+			if(bIsRefy)
 			{
-				CHkj_Character_RecognitionDlg::RectifyImage(src,dst_rtf);
+				RectifyImage(src,dst_rtf,cameraMatrix,distCoeffs,newMatrix,rectRoi);
 			}
 			else
 			{
@@ -664,12 +690,13 @@ bool CHkj_Character_RecognitionDlg::GetCameraImageLoop(LONG lCamNO,LONG lUserID)
 				CHkj_Character_RecognitionDlg::SaveImageOpenCV(dst,strSaveImgPath,m_iImageSaveIndex[lCamNO]);
 				m_iImageSaveIndex[lCamNO]=m_iImageSaveIndex[lCamNO]+1;
 			}
+			Sleep(iSaveIntervalTime);
 		}
 		else
 		{
 			continue;
-		}
-		Sleep(100);
+			Sleep(100);
+		}		
 	}
 	delete JpegPicBuffer;
 	return true;
@@ -716,35 +743,59 @@ CString CHkj_Character_RecognitionDlg::GetAppPath()
 	return strAppPath;
 }
 
-void CHkj_Character_RecognitionDlg::GetCameraMatrix(int iImgWidth,int iImgHeight) 
+void CHkj_Character_RecognitionDlg::GetCameraMatrix_2560(int iImgWidth,int iImgHeight,cv::Mat &cameraMatrix,cv::Mat &distCoeffs,cv::Mat &newMatrix,cv::Rect &rectRoi) 
 {
-	m_cameraMatrix = cv::Mat::eye(3, 3, CV_64F);
-    m_cameraMatrix.at<double>(0, 0) = 1996.731;
-    m_cameraMatrix.at<double>(0, 1) = 0;
-    m_cameraMatrix.at<double>(0, 2) = 1301.808;
-	m_cameraMatrix.at<double>(1, 0) = 0;
-    m_cameraMatrix.at<double>(1, 1) = 1997.605;
-    m_cameraMatrix.at<double>(1, 2) = 669.558;
-	m_cameraMatrix.at<double>(2, 0) = 0;
-    m_cameraMatrix.at<double>(2, 1) = 0;
-    m_cameraMatrix.at<double>(2, 2) = 1;
+	cameraMatrix = cv::Mat::eye(3, 3, CV_64F);
+    cameraMatrix.at<double>(0, 0) = 1996.731;
+    cameraMatrix.at<double>(0, 1) = 0;
+    cameraMatrix.at<double>(0, 2) = 1301.808;
+	cameraMatrix.at<double>(1, 0) = 0;
+    cameraMatrix.at<double>(1, 1) = 1997.605;
+    cameraMatrix.at<double>(1, 2) = 669.558;
+	cameraMatrix.at<double>(2, 0) = 0;
+    cameraMatrix.at<double>(2, 1) = 0;
+    cameraMatrix.at<double>(2, 2) = 1;
  
-	m_distCoeffs = cv::Mat::zeros(5, 1, CV_64F);
-    m_distCoeffs.at<double>(0, 0) = -0.394368;
-    m_distCoeffs.at<double>(1, 0) = 0.142365;
-    m_distCoeffs.at<double>(2, 0) = 0.000733;
-    m_distCoeffs.at<double>(3, 0) = 0.001086;
-    m_distCoeffs.at<double>(4, 0) = -0.014611;
+	distCoeffs = cv::Mat::zeros(5, 1, CV_64F);
+    distCoeffs.at<double>(0, 0) = -0.394368;
+    distCoeffs.at<double>(1, 0) = 0.142365;
+    distCoeffs.at<double>(2, 0) = 0.000733;
+    distCoeffs.at<double>(3, 0) = 0.001086;
+    distCoeffs.at<double>(4, 0) = -0.014611;
 
 	cv::Size imageSize=cv::Size(iImgWidth,iImgHeight);
-	m_newMatrix=cv::getOptimalNewCameraMatrix(m_cameraMatrix,m_distCoeffs,imageSize,1,imageSize,&m_rectRoi);
+	newMatrix=cv::getOptimalNewCameraMatrix(cameraMatrix,distCoeffs,imageSize,1,imageSize,&rectRoi);
 }
 
-void CHkj_Character_RecognitionDlg::RectifyImage(const cv::Mat src ,cv::Mat& dst) 
+void CHkj_Character_RecognitionDlg::GetCameraMatrix_1920(int iImgWidth,int iImgHeight,cv::Mat &cameraMatrix,cv::Mat &distCoeffs,cv::Mat &newMatrix,cv::Rect &rectRoi) 
+{
+	cameraMatrix = cv::Mat::eye(3, 3, CV_64F);
+    cameraMatrix.at<double>(0, 0) = 1325.692;
+    cameraMatrix.at<double>(0, 1) = 0;
+    cameraMatrix.at<double>(0, 2) = 962.175;
+	cameraMatrix.at<double>(1, 0) = 0;
+    cameraMatrix.at<double>(1, 1) = 1326.459;
+    cameraMatrix.at<double>(1, 2) = 572.564;
+	cameraMatrix.at<double>(2, 0) = 0;
+    cameraMatrix.at<double>(2, 1) = 0;
+    cameraMatrix.at<double>(2, 2) = 1;
+ 
+	distCoeffs = cv::Mat::zeros(5, 1, CV_64F);
+    distCoeffs.at<double>(0, 0) = -0.369642;
+    distCoeffs.at<double>(1, 0) = 0.038896;
+    distCoeffs.at<double>(2, 0) = -0.00323;
+    distCoeffs.at<double>(3, 0) = 0.000147;
+    distCoeffs.at<double>(4, 0) = 0.16238;
+
+	cv::Size imageSize=cv::Size(iImgWidth,iImgHeight);
+	newMatrix=cv::getOptimalNewCameraMatrix(cameraMatrix,distCoeffs,imageSize,1,imageSize,&rectRoi);
+}
+
+void CHkj_Character_RecognitionDlg::RectifyImage(const cv::Mat src ,cv::Mat& dst,cv::Mat cameraMatrix,cv::Mat distCoeffs,cv::Mat newMatrix,cv::Rect rectRoi) 
 {
 	cv::Mat dst_temp;
-	cv::undistort(src,dst_temp,m_cameraMatrix,m_distCoeffs,m_newMatrix);
-	dst_temp(m_rectRoi).copyTo(dst);
+	cv::undistort(src,dst_temp,cameraMatrix,distCoeffs,newMatrix);
+	dst_temp(rectRoi).copyTo(dst);
 }
 
 void CHkj_Character_RecognitionDlg::RotataImage(const cv::Mat src ,cv::Mat& dst,int iAngle)

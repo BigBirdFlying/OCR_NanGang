@@ -1,9 +1,9 @@
-﻿// Created by Microsoft (R) C/C++ Compiler Version 15.00.21022.08 (b37cb374).
+﻿// Created by Microsoft (R) C/C++ Compiler Version 15.00.21022.08 (b0d86754).
 //
-// e:\works\defectsarithforsteel\classifierarithforsteel\hkj_character_recognition\hkj_character_recognition\x64\debug\msxml6.tlh
+// f:\字符样本\备份程序\hkj_character_recognition\hkj_character_recognition\x64\debug\msxml6.tlh
 //
 // C++ source equivalent of Win32 type library msxml6.dll
-// compiler-generated file created 09/23/20 at 14:23:29 - DO NOT EDIT!
+// compiler-generated file created 11/30/20 at 10:47:53 - DO NOT EDIT!
 
 #pragma once
 #pragma pack(push, 8)
@@ -4512,7 +4512,7 @@ IXMLHTTPRequest2Callback : IUnknown
 // Wrapper method implementations
 //
 
-#include "e:\works\defectsarithforsteel\classifierarithforsteel\hkj_character_recognition\hkj_character_recognition\x64\debug\msxml6.tli"
+#include "f:\字符样本\备份程序\hkj_character_recognition\hkj_character_recognition\x64\debug\msxml6.tli"
 
 } // namespace MSXML2
 

@@ -63,7 +63,6 @@ class SteelCharDetect:
         else:
             try:
                 r_image,result = self.steel_model.detect_image(src_image_Image)
-                self.cache_num_index=self.cache_num_index+1
                 max_area=0
                 result_more = None
                 if len(result) > 0:
@@ -88,6 +87,8 @@ class SteelCharDetect:
                     roi_a=roi_w*roi_h
                     
                     if roi_w>src_image_width*0.1 and to_left>src_image_width*0.15 and to_right>src_image_width*0.15 and to_top>=0 and to_bottom>=0:
+                        #限制多少缓存字符后发送
+                        self.cache_num_index=self.cache_num_index+1
                         #存在字符则进行存储
                         datetime=time.strftime("%Y%m%d")
                         save_img_path = ((self.path_steel + "\%s") % datetime)
@@ -413,6 +414,9 @@ def steel_char_detect(path_1,path_2,path_3,path_4):
     time.sleep(5)#延时一会，让二级信息接收到后，再对变量进行更新，不让其使用默认值，另外感觉recv_res得到的是变量的地址，会跟着变
     recv_res=t_recv_info.get_result()
     last_recv_res["SBM"]=copy.deepcopy(recv_res["SBM"])
+    last_recv_res["HTF1"]=copy.deepcopy(recv_res["HTF1"])
+    last_recv_res["HTF2"]=copy.deepcopy(recv_res["HTF2"])
+    last_recv_res["PRINT"]=copy.deepcopy(recv_res["PRINT"])
     char_roi=None
     enable_l2_final_send={"SBM":False,"HTF1":False,"HTF2":False,"PRINT":False} #程序重启后钢板不在识别区时不发送数据
     last_recv_res_plan_counter={"SBM":last_recv_res["SBM"][0],"HTF1":last_recv_res["HTF1"][0],"HTF2":last_recv_res["HTF2"][0],"PRINT":last_recv_res["PRINT"][0]} #通过2级发送的第一位计数判断是否还给二级发送，如果计数已变化则不再发送
@@ -423,8 +427,6 @@ def steel_char_detect(path_1,path_2,path_3,path_4):
         
 
         Log_oper.add_log("Normal>>-----------------抛丸机前字符识别-----------------")
-        #recv_res=t_recv_info.get_result()
-        #print(recv_res)
         for root,dirs,files in os.walk(path_1["path_ref"]):
             img_path_list=[]
             
@@ -536,7 +538,8 @@ def steel_char_detect(path_1,path_2,path_3,path_4):
 
         Log_oper.add_log("Normal>>-----------------二号加热炉前字符识别-----------------")
         for root,dirs,files in os.walk(path_3["path_ref"]):
-            img_path_list=[]           
+            img_path_list=[]
+            
             if len(files)>0:                                                        #确定是否钢板已走完
                 judge_num_htf2=0
             else:
@@ -556,8 +559,33 @@ def steel_char_detect(path_1,path_2,path_3,path_4):
                             SCD_HTF2_Oper.detect_char_mini(char_roi,img_name,top_offset,bottom_offset)
                     steel_no,steel_type,steel_size,img_path=SCD_HTF2_Oper.get_send_char(char_roi,cache_limit=True)
                     if steel_no is not None:
-                        SCD_HTF2_Oper.send_char_to_l2(steel_no,steel_type,steel_size,img_path)            
-            if judge_num_htf2<5:                                                    #如果连续五次搜索不到图像需要确认缓存中是否还存在字符
+                        recv_res=t_recv_info.get_result()
+                        if recv_res["HTF2"][0]==last_recv_res_plan_counter["HTF2"] and recv_res["HTF2"][2]>=0:  #还未依据钢板号查到计划且辊道速度不为负
+                            SCD_HTF2_Oper.send_char_to_l2(steel_no,steel_type,steel_size,img_path)
+                            steel_no_send["HTF2"]=True
+
+            recv_res=t_recv_info.get_result()                                   #一级状态
+            if recv_res["HTF2"][1]==1:
+                enable_l2_final_send["HTF2"]=True
+            if recv_res["HTF2"][1]==0 and last_recv_res["HTF2"][1]==1:#钢板退出时执行
+                if recv_res["HTF2"][2]>=0 and enable_l2_final_send["HTF2"] is True:
+                    if steel_no_send["HTF2"] is not True:
+                        steel_no,steel_type,steel_size,img_path=SCD_HTF2_Oper.get_send_char(char_roi,cache_limit=True)
+                        if steel_no is not None:
+                            SCD_HTF2_Oper.send_char_to_l2(steel_no,steel_type,steel_size,img_path)
+                        else:
+                            if SCD_HTF2_Oper.curr_char_img_info[1] is not None:
+                                SCD_HTF2_Oper.send_char_to_l2_not_steel_no()
+                            else:
+                                SCD_HTF2_Oper.send_char_to_l2_not_img()
+            elif recv_res["HTF2"][1]==1 and last_recv_res["HTF2"][1]==0:#钢板重新进入后，上一次发送的板号置0
+                steel_no_send["HTF2"]=False
+                last_recv_res_plan_counter["HTF2"]=copy.deepcopy(recv_res["HTF2"][0])
+                SCD_HTF2_Oper.last_steel_no="00000000000000"                         
+                SCD_HTF2_Oper.curr_char_img_info=[None,None]
+            last_recv_res["HTF2"]=copy.deepcopy(recv_res["HTF2"])
+                       
+            if judge_num_htf2>5:                                                     #如果连续五次搜索不到图像需要确认缓存中是否还存在字符 
                 steel_no,steel_type,steel_size,img_path=SCD_HTF2_Oper.get_send_char(char_roi,cache_limit=False)
                 if steel_no is not None:
                     SCD_HTF2_Oper.send_char_to_l2(steel_no,steel_type,steel_size,img_path)
@@ -586,9 +614,33 @@ def steel_char_detect(path_1,path_2,path_3,path_4):
                             SCD_PRINT_Oper.detect_char_mini(char_roi,img_name,top_offset,bottom_offset)
                     steel_no,steel_type,steel_size,img_path=SCD_PRINT_Oper.get_send_char(char_roi,cache_limit=True)
                     if steel_no is not None:
-                        SCD_PRINT_Oper.send_char_to_l2(steel_no,steel_type,steel_size,img_path)
-             
-            if judge_num_print<5:                                                   #如果连续五次搜索不到图像需要确认缓存中是否还存在字符
+                        recv_res=t_recv_info.get_result()
+                        if recv_res["PRINT"][0]==last_recv_res_plan_counter["PRINT"] and recv_res["PRINT"][2]>=0:  #还未依据钢板号查到计划且辊道速度不为负
+                            SCD_PRINT_Oper.send_char_to_l2(steel_no,steel_type,steel_size,img_path)
+                            steel_no_send["PRINT"]=True
+
+            recv_res=t_recv_info.get_result()                                   #一级状态
+            if recv_res["PRINT"][1]==1:
+                enable_l2_final_send["PRINT"]=True
+            if recv_res["PRINT"][1]==0 and last_recv_res["PRINT"][1]==1:#钢板退出时执行
+                if recv_res["PRINT"][2]>=0 and enable_l2_final_send["PRINT"] is True:
+                    if steel_no_send["PRINT"] is not True:
+                        steel_no,steel_type,steel_size,img_path=SCD_PRINT_Oper.get_send_char(char_roi,cache_limit=True)
+                        if steel_no is not None:
+                            SCD_PRINT_Oper.send_char_to_l2(steel_no,steel_type,steel_size,img_path)
+                        else:
+                            if SCD_PRINT_Oper.curr_char_img_info[1] is not None:
+                                SCD_PRINT_Oper.send_char_to_l2_not_steel_no()
+                            else:
+                                SCD_PRINT_Oper.send_char_to_l2_not_img()
+            elif recv_res["PRINT"][1]==1 and last_recv_res["PRINT"][1]==0:#钢板重新进入后，上一次发送的板号置0
+                steel_no_send["PRINT"]=False
+                last_recv_res_plan_counter["PRINT"]=copy.deepcopy(recv_res["PRINT"][0])
+                SCD_PRINT_Oper.last_steel_no="00000000000000"                         
+                SCD_PRINT_Oper.curr_char_img_info=[None,None]
+            last_recv_res["PRINT"]=copy.deepcopy(recv_res["PRINT"])
+                       
+            if judge_num_print>5:                                                     #如果连续五次搜索不到图像需要确认缓存中是否还存在字符 
                 steel_no,steel_type,steel_size,img_path=SCD_PRINT_Oper.get_send_char(char_roi,cache_limit=False)
                 if steel_no is not None:
                     SCD_PRINT_Oper.send_char_to_l2(steel_no,steel_type,steel_size,img_path)

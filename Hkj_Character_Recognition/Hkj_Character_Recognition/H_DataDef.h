@@ -9,7 +9,9 @@ typedef struct tagConfigCamera
 	CString strPassword;
 	int iImgWidth;
 	int iImgHeight;
+	bool bIsRefy;
 	bool bIsAutoSave;
+	int iSaveIntervalTime;
 	int iRotateAngle;
 	float fJudgeLeftRatio;
 	float fJudgeRightRatio;
